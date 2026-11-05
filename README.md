@@ -6,6 +6,8 @@ Collaborative Multi-Agent Reinforcement Learning Framework for Dynamic Pricing i
 
 The frontend is deployed on Vercel. Public API/worker hosting is not configured yet, so online login, training and persisted research results require the backend deployment described below. The full workflow remains available locally.
 
+[Prepare the backend on Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Ftejaswini0424%2Fpricemesh-collaborative-dynamic-pricing) using the included Blueprint. This requires a Render account and approval of its paid service/disk charges. Once the service is healthy, follow [backend connection steps](DEPLOYMENT_GUIDE.md#connect-the-persistent-backend).
+
 An integrated research application for a **synthetic single-retailer** marketplace. React frontend, authenticated FastAPI service, durable database queue, independent worker and explicit PyTorch IPPO/MAPPO implementations. The approved design is in [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md); implementation differences are recorded in [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md).
 
 ## Run locally

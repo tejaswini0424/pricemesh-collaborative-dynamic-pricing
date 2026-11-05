@@ -1,0 +1,32 @@
+# Review and approve Render's service/disk charges before creating this service.
+# API and worker run together because a disk cannot be shared between services.
+services:
+  - type: web
+    name: pricemesh-backend
+    runtime: python
+    repo: https://github.com/tejaswini0424/pricemesh-collaborative-dynamic-pricing
+    branch: master
+    plan: standard
+    numInstances: 1
+    buildCommand: >-
+      pip install 'torch>=2.6,<3' --index-url https://download.pytorch.org/whl/cpu &&
+      pip install -r backend/requirements.txt
+    startCommand: python -m backend.app.serve
+    healthCheckPath: /api/v1/health/ready
+    disk:
+      name: pricemesh-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: DATABASE_URL
+        value: sqlite:////var/data/pricemesh.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://pricemesh-dynamic-pricing.vercel.app
+      - key: PYTHONUNBUFFERED
+        value: '1'

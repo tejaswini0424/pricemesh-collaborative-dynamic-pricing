@@ -16,6 +16,19 @@ API and worker must share the same artifact volume and database. Back up both co
 
 ## Vercel frontend
 
+### Connect the persistent backend
+
+The repository includes a ready-to-review Render Blueprint: [deploy backend](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Ftejaswini0424%2Fpricemesh-collaborative-dynamic-pricing).
+
+1. Sign in to Render and review `render.yaml`. It proposes one **paid Standard** Python web service and a **1 GB persistent disk**. Review Render's charges before approving creation; no backend service has been purchased or created by this configuration alone.
+2. Render generates JWT_SECRET. The disk stores SQLite and artifacts under `/var/data`. The hosted launcher runs migrations at startup and supervises API and worker in the same instance, because Render cannot share one disk between separate services. This is a single-instance research deployment, not high availability; back up the database and artifacts.
+3. Wait for the Render service to become healthy. Copy its actual HTTPS origin, such as the URL shown in Render's dashboard. Do not assume that a service name implies a particular available hostname.
+4. From the repository root, run `node scripts/connect-backend.mjs https://YOUR-ACTUAL-BACKEND-HOST`. The script checks PriceMesh readiness before updating frontend/vercel.json with same-origin API and documentation rewrites. An invalid/unreachable backend leaves the frontend configuration unchanged.
+5. Commit and push the generated vercel.json change. Vercel automatically redeploys. Keep VITE_API_BASE_URL unset, so the browser calls `/api/v1` on the frontend domain. CORS_ORIGINS must include the exact production frontend origin; the Blueprint includes the current Vercel domain.
+6. Verify `/api/v1/health/ready` through the Vercel domain, then register, reload, train and export through the public UI. Check worker status in System health. Only after these pass is the online backend connection complete.
+
+The hosted launcher was exercised locally with production-mode configuration, a fresh migrated database and a real API-to-worker dataset job. Render itself still requires your account and service creation. See [Render disk limitations](https://render.com/docs/disks) and [Blueprint reference](https://render.com/docs/blueprint-spec).
+
 Live frontend: https://pricemesh-dynamic-pricing.vercel.app. The Vercel project `pricemesh-dynamic-pricing` is connected to the GitHub repository with its Root Directory set to `frontend`. GitHub pushes build that directory using `npm run build` and publish `dist`. The supplied vercel.json rewrites frontend routes to index.html. This **does not host the Python worker**. Deploy the persistent API/worker to a suitable container/VM host to enable online account and research operations.
 
 Preferred routing is a same-origin Vercel rewrite from `/api/:path*` to the actual deployed backend `/api/:path*`; add that exact destination only after a real backend URL exists. Route Swagger/OpenAPI too if desired. Leave VITE_API_BASE_URL=/api/v1. Alternatively use same-site HTTPS subdomains and set VITE_API_BASE_URL to the API URL before building. Unrelated domains will conflict with Strict refresh cookies and are unsupported without a proxy.
