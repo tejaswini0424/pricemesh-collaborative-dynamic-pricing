@@ -16,11 +16,11 @@ API and worker must share the same artifact volume and database. Back up both co
 
 ## Vercel frontend
 
-From frontend/: `npx vercel --prod`. The supplied vercel.json builds Vite and rewrites frontend routes to index.html. This **does not host the Python worker**. Deploy the persistent API/worker to a suitable container/VM host first.
+Live frontend: https://pricemesh-dynamic-pricing.vercel.app. The Vercel project `pricemesh-dynamic-pricing` is connected to the GitHub repository with its Root Directory set to `frontend`. GitHub pushes build that directory using `npm run build` and publish `dist`. The supplied vercel.json rewrites frontend routes to index.html. This **does not host the Python worker**. Deploy the persistent API/worker to a suitable container/VM host to enable online account and research operations.
 
 Preferred routing is a same-origin Vercel rewrite from `/api/:path*` to the actual deployed backend `/api/:path*`; add that exact destination only after a real backend URL exists. Route Swagger/OpenAPI too if desired. Leave VITE_API_BASE_URL=/api/v1. Alternatively use same-site HTTPS subdomains and set VITE_API_BASE_URL to the API URL before building. Unrelated domains will conflict with Strict refresh cookies and are unsupported without a proxy.
 
-The previous Vercel login request required user authorization. No public full-stack deployment has been confirmed. Do not claim a deployed URL exists until the CLI reports success and the public authentication → job → export workflow passes.
+Vercel authorization and frontend production deployment completed on 5 November 2026. The production root, dashboard and training deep link returned HTTP 200. No public backend URL is configured, so public authentication → job → export remains unverified and unavailable. Frontend publication alone is not a full-stack deployment.
 
 ## Release verification
 

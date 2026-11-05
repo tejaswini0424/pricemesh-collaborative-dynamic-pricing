@@ -2,6 +2,10 @@
 
 Collaborative Multi-Agent Reinforcement Learning Framework for Dynamic Pricing in E-Commerce.
 
+**Live frontend:** https://pricemesh-dynamic-pricing.vercel.app
+
+The frontend is deployed on Vercel. Public API/worker hosting is not configured yet, so online login, training and persisted research results require the backend deployment described below. The full workflow remains available locally.
+
 An integrated research application for a **synthetic single-retailer** marketplace. React frontend, authenticated FastAPI service, durable database queue, independent worker and explicit PyTorch IPPO/MAPPO implementations. The approved design is in [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md); implementation differences are recorded in [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md).
 
 ## Run locally
