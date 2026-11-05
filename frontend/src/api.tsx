@@ -1,0 +1,37 @@
+import React,{createContext,useContext,useEffect,useState} from 'react';
+import {Link} from 'react-router-dom';
+export type Resource={id:string;kind:string;name:string;created_at:number;source_id:string|null;data:Record<string,any>};
+export type Job={id:string;kind:string;status:string;completed:number;total:number;progress:number;error:string|null;result_id:string|null;control:string;details:{latest?:Record<string,any>;history?:Record<string,any>[]}};
+type User={id:string;name:string;email:string;role:string};
+let accessToken='';
+let refreshPromise:Promise<any>|null=null;
+function refreshSession(){
+ if(!refreshPromise)refreshPromise=api('/auth/refresh','POST').then(result=>{accessToken=result.access_token;return result}).finally(()=>{refreshPromise=null});
+ return refreshPromise;
+}
+export const API_BASE=(import.meta.env.VITE_API_BASE_URL||'/api/v1').replace(/\/$/,'');
+export async function api<T=any>(path:string,method='GET',body?:unknown):Promise<T>{
+ const response=await fetch(API_BASE+path,{method,credentials:'include',headers:{'Content-Type':'application/json','X-Requested-With':'PriceMesh',...(accessToken?{Authorization:`Bearer ${accessToken}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+ if(!response.ok){let message=`Request failed (${response.status})`;try{const payload=await response.json();message=typeof payload.detail==='string'?payload.detail:payload.detail?.map((e:any)=>`${e.loc.slice(1).join('.')}: ${e.msg}`).join('; ')||message;}catch{}throw new Error(message)}
+ return response.json();
+}
+type AuthContextType={user:User|null;ready:boolean;online:boolean;login:(email:string,password:string,name?:string)=>Promise<void>;logout:()=>Promise<void>};
+const AuthContext=createContext<AuthContextType>({user:null,ready:false,online:false,login:async()=>{},logout:async()=>{}});
+export const useAuth=()=>useContext(AuthContext);
+export function AuthProvider({children}:{children:React.ReactNode}){
+ const [user,setUser]=useState<User|null>(null),[ready,setReady]=useState(false),[online,setOnline]=useState(false);
+ useEffect(()=>{let active=true;api('/health/ready').then(()=>active&&setOnline(true)).catch(()=>{});refreshSession().then(result=>{if(active)setUser(result.user)}).catch(()=>{}).finally(()=>active&&setReady(true));return ()=>{active=false}},[]);
+ useEffect(()=>{if(!user)return;const timer=setInterval(()=>{refreshSession().then(result=>setUser(result.user)).catch(()=>{accessToken='';setUser(null)})},20*60*1000);return()=>clearInterval(timer)},[Boolean(user)]);
+ async function login(email:string,password:string,name?:string){const result=await api(name?'/auth/register':'/auth/login','POST',{email,password,...(name?{name}:{})});accessToken=result.access_token;setUser(result.user);setOnline(true)}
+ async function logout(){await api('/auth/logout','POST');accessToken='';setUser(null)}
+ return <AuthContext.Provider value={{user,ready,online,login,logout}}>{children}</AuthContext.Provider>;
+}
+export function Account({label}:{label?:string}={}){const {user,login,logout}=useAuth();const [open,setOpen]=useState(false),[register,setRegister]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const data=new FormData(e.currentTarget);try{await login(String(data.get('email')),String(data.get('password')),register?String(data.get('name')):undefined);setOpen(false)}catch(e){setError(String((e as Error).message))}finally{setBusy(false)}}return <><button className="button account-button" onClick={()=>setOpen(true)}>{label??(user?user.name:'Sign in')}</button>{open&&<div className="modal-backdrop"><section className="panel auth-modal" role="dialog" aria-modal="true" aria-label="Research account"><button className="modal-close" onClick={()=>setOpen(false)} aria-label="Close account dialog">×</button><h2>{user?'Your research account':register?'Create your workspace':'Welcome to PriceMesh'}</h2>{user?<><p>{user.email} · {user.role}</p><button className="button primary" onClick={()=>logout().then(()=>setOpen(false)).catch(e=>setError(e.message))}>Sign out</button></>:<form onSubmit={submit}>{register&&<label>Display name<input name="name" required maxLength={100}/></label>}<label>Email<input name="email" type="email" required maxLength={254} autoComplete="email"/></label><label>Password<input name="password" type="password" minLength={10} maxLength={128} required autoComplete={register?'new-password':'current-password'}/></label>{error&&<div className="error-box" role="alert">{error}</div>}<button className="button primary" disabled={busy}>{busy?'Connecting…':register?'Create account':'Sign in'}</button><button type="button" className="link-button" onClick={()=>{setRegister(!register);setError('')}}>{register?'Already have an account? Sign in':'New researcher? Create an account'}</button></form>}</section></div>}</>}
+export function Connection(){const {online}=useAuth();return <span className={`connection ${online?'online':''}`}><span/>{online?'API connected':'API unavailable'}</span>}
+export function ResourceSearch({query,onSelect}:{query:string;onSelect:()=>void}){const {user}=useAuth();const [items,setItems]=useState<Resource[]>([]);useEffect(()=>{let active=true;const timer=setTimeout(()=>{if(user&&query.trim())api('/search?q='+encodeURIComponent(query)).then(r=>active&&setItems(r.items)).catch(()=>active&&setItems([]));else setItems([])},250);return()=>{active=false;clearTimeout(timer)}},[query,user]);const routes:Record<string,string>={catalog:'/catalog',scenario:'/scenarios',experiment:'/experiments',policy:'/policies',dataset:'/datasets',evaluation:'/performance',simulation:'/decisions',report:'/reports'};return items.length?<div><small>Saved research records</small>{items.map(r=><Link to={(routes[r.kind]||'/history')+'?resource='+r.id} key={r.id} onClick={onSelect}>{r.name}<small>{r.kind}</small></Link>)}</div>:null}
+export function Notifications(){const {user}=useAuth();const [items,setItems]=useState<{id:string;message:string;read:boolean}[]>([]);useEffect(()=>{if(user)api('/notifications').then(r=>setItems(r.items)).catch(()=>{})},[user]);return <div className="notification-panel"><b>Notifications</b>{items.length?items.map(n=><button className="notice-item" key={n.id} onClick={()=>api('/notifications/'+n.id,'PATCH').then(()=>setItems(items.map(i=>i.id===n.id?{...i,read:true}:i)))}>{n.read?'✓ ':''}{n.message}</button>):<p>No notifications yet.</p>}</div>}
+export async function download(resource:Resource,format='json'){
+ const response=await fetch(`${API_BASE}/resources/${resource.id}/download?format=${format}`,{headers:{Authorization:`Bearer ${accessToken}`},credentials:'include'});
+ if(!response.ok)throw new Error('Export failed');const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download=`pricemesh-${resource.id}.${format}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+export function useResources(kind?:string){const {user}=useAuth();const [items,setItems]=useState<Resource[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(false);async function refresh(){if(!user){setItems([]);return}setLoading(true);try{const r=await api('/resources?limit=100'+(kind?'&kind='+kind:''));setItems(r.items);setError('')}catch(e){setError((e as Error).message)}finally{setLoading(false)}}useEffect(()=>{refresh()},[kind,user]);return {items,error,loading,refresh}}

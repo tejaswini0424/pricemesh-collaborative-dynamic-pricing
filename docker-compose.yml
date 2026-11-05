@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pricemesh
+      POSTGRES_USER: pricemesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U pricemesh -d pricemesh']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: &backend-env
+      APP_ENV: ${APP_ENV:-development}
+      DATA_DIR: /data
+      DATABASE_URL: postgresql+psycopg://pricemesh:${POSTGRES_PASSWORD}@postgres/pricemesh
+      JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+    command: [python, -m, alembic, -c, backend/alembic.ini, upgrade, head]
+    volumes: [artifacts:/data]
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-env
+    volumes: [artifacts:/data]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-env
+    command: [python, -m, backend.app.worker]
+    volumes: [artifacts:/data]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports: ['127.0.0.1:8080:80']
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+  mlflow:
+    profiles: [tracking]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: [mlflow, server, --host, 0.0.0.0, --port, '5000', --backend-store-uri, 'sqlite:////mlflow/tracking.db', --serve-artifacts, --artifacts-destination, /mlflow/artifacts, --default-artifact-root, 'mlflow-artifacts:/']
+    environment:
+      MLFLOW_SERVER_ALLOWED_HOSTS: mlflow:5000,localhost:5000
+    volumes: [tracking:/mlflow]
+    restart: unless-stopped
+volumes:
+  database:
+  artifacts:
+  tracking:

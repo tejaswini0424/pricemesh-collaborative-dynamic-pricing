@@ -1,0 +1,31 @@
+import React, {useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {BrowserRouter, NavLink, useLocation, Link} from 'react-router-dom';
+import {Activity, ArrowRight, Bell, Box, ChevronDown, ChevronLeft, ChevronRight, FlaskConical, Globe2, Layers3, Menu, Moon, Network, Plus, Search, Settings2, ShieldCheck, Sun, X} from 'lucide-react';
+import {pages} from './pages';
+import './styles.css';
+import {AuthProvider, Account, Connection, Notifications, ResourceSearch} from './api';
+import {ResearchWorkspace, LiveDashboard, ServiceStatus} from './Workspace';
+
+const icons=[Layers3,Globe2,Network,FlaskConical,Activity,ShieldCheck,Box,Settings2];
+const groups=[...new Set(pages.map(p=>p.group))];
+export function App(){
+ const location=useLocation(); const page=pages.find(p=>p.path===(location.pathname==='/'?'/dashboard':location.pathname));
+ const [collapsed,setCollapsed]=useState(false),[mobile,setMobile]=useState(false),[query,setQuery]=useState(''),[notice,setNotice]=useState(''),[notifications,setNotifications]=useState(false);
+ const [dark,setDark]=useState(()=>localStorage.getItem('pm-theme')==='dark');
+ function theme(){setDark(!dark);localStorage.setItem('pm-theme',!dark?'dark':'light');}
+ return <div className={`app ${dark?'dark':''} ${collapsed?'collapsed':''}`}>
+ {mobile&&<button className="scrim" aria-label="Close navigation" onClick={()=>setMobile(false)}/>}
+ <aside className={mobile?'sidebar open':'sidebar'}>
+ <Link to="/dashboard" className="brand"><span className="brand-icon"><Network size={23}/></span><span>PriceMesh<small>RESEARCH PLATFORM</small></span></Link>
+ <div className="workspace"><span className="avatar">P</span><span>Pricing workspace<small>Local research environment</small></span><ChevronDown size={15}/></div>
+ <nav aria-label="Main navigation">{groups.map((group,i)=>{const Icon=icons[i];return <section key={group}><div className="nav-group">{group}</div>{pages.filter(p=>p.group===group).map(p=><NavLink key={p.path} to={p.path} title={p.title} onClick={()=>setMobile(false)}><Icon size={17}/><span>{p.title}</span>{p.path==='/training'&&<span className="tiny">RL</span>}</NavLink>)}</section>})}</nav>
+ <div className="sidebar-footer"><span className="local-dot"/><span>Local environment</span><button onClick={()=>setCollapsed(!collapsed)} aria-label="Toggle sidebar width">{collapsed?<ChevronRight size={16}/>:<ChevronLeft size={16}/>}</button></div>
+ </aside>
+ <div className="main"><header className="topbar"><button className="mobile-toggle icon-button" onClick={()=>setMobile(true)} aria-label="Open navigation"><Menu size={20}/></button><div className="breadcrumb">Workspace <ChevronRight size={13}/><b>{page?.title||'Page not found'}</b></div><div className="top-actions"><div className="search"><Search size={16}/><input aria-label="Search pages" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search workspace…"/><kbd>⌕</kbd>{query&&<div className="search-results"><ResourceSearch query={query} onSelect={()=>setQuery('')}/>{pages.filter(p=>`${p.title} ${p.group}`.toLowerCase().includes(query.toLowerCase())).map(p=><Link key={p.path} to={p.path} onClick={()=>setQuery('')}>{p.title}<small>{p.group}</small></Link>)}{!pages.some(p=>p.title.toLowerCase().includes(query.toLowerCase()))&&<small>Search matches available navigation pages.</small>}</div>}</div><Connection/><button className="icon-button" onClick={theme} aria-label="Toggle color theme">{dark?<Sun size={18}/>:<Moon size={18}/>}</button><div className="notification-wrap"><button className="icon-button" onClick={()=>setNotifications(!notifications)} aria-label="Notifications"><Bell size={18}/></button>{notifications&&<Notifications/>}</div><Account/></div></header>
+ <main>{page?<><div className="page-heading"><div><div className="eyebrow">{page.group} <span>/</span> PRICEMESH</div><h1>{page.title}</h1><p>{page.description}</p></div><div className="heading-actions"><span className="badge"><span/>Research mode</span>{page.path==='/dashboard'?<Link className="button primary" to="/experiments"><Plus size={16}/>New experiment</Link>:null}</div></div>{page.path==='/dashboard'?<LiveDashboard/>:page.path==='/overview'?<Overview/>:page.path==='/system'?<ServiceStatus/>:<ResearchWorkspace key={page.path} page={page} notify={setNotice}/>}</>:<div className="empty"><h1>Page not found</h1><Link to="/dashboard">Return to dashboard</Link></div>}<footer><span>PriceMesh · Collaborative pricing intelligence</span><span>Synthetic markets. Reproducible research.</span></footer></main>
+ </div>{notice&&<div role="status" className="toast">{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={16}/></button></div>}</div>;
+}
+function Overview(){return <><div className="overview-cards">{[['01','Design','Build a synthetic multi-product marketplace with inventory, elasticity and explicit price constraints.','/scenarios'],['02','Learn','Compare independent PPO with cooperative MAPPO using a centralized critic and shared reward.','/training'],['03','Measure','Use paired held-out scenarios, multiple training seeds and transparent uncertainty.','/performance']].map(([n,t,d,to])=><Link className="panel overview-card" key={n} to={to}><span className="step-number">{n}</span><h2>{t}</h2><p>{d}</p><ArrowRight size={20}/></Link>)}</div><div className="panel prose"><h3>Research scope</h3><p>Pricing agents cooperate across products owned by one retailer. Competitor prices are exogenous simulated inputs. No real store, payment network or customer data is connected.</p><h3>What counts as a result?</h3><p>Actual completed evaluations with saved configurations, checkpoints, scenario manifests and seeds. Short demonstration runs do not establish convergence or real-world profitability.</p><h3>Current milestone</h3><p>The API and separate worker power persisted catalogs, scenarios, datasets, PPO/MAPPO training, simulations and held-out evaluation. Configure a persistent backend before publishing the frontend.</p></div></>}
+const rootElement=document.getElementById('root');
+if(rootElement) createRoot(rootElement).render(<React.StrictMode><BrowserRouter><AuthProvider><App/></AuthProvider></BrowserRouter></React.StrictMode>);
