@@ -11,6 +11,8 @@ The approved design is PROJECT_BLUEPRINT.md. The repository now contains an inte
 - Run Alembic migrations before restarting API/worker after a schema change. Development create_all is a bootstrap convenience, not a replacement for migrations.
 - All artifact and resource access must remain owner-scoped. Never load arbitrary pickle checkpoints.
 - Keep README milestone status and known limitations accurate.
+- Vercel deployment uses root vercel.json, Vercel Services, a production daemon, Neon PostgreSQL and private Blob. Keep the project Root Directory at repository root. Local filesystem artifacts are only authoritative for local deployments; cloud callers must use the artifact adapter.
+- Keep live accounts and provisioned production database connections out of automated test fixtures. Never print pulled environment files or credentials.
 
 ## Verified at this milestone
 

@@ -2,11 +2,11 @@
 
 Collaborative Multi-Agent Reinforcement Learning Framework for Dynamic Pricing in E-Commerce.
 
-**Live frontend:** https://pricemesh-dynamic-pricing.vercel.app
+**Live application:** https://pricemesh-dynamic-pricing.vercel.app
 
-The frontend is deployed on Vercel. Public API/worker hosting is not configured yet, so online login, training and persisted research results require the backend deployment described below. The full workflow remains available locally.
+Frontend and API are deployed together with Vercel Services. A Vercel Daemon runs the pricing-training worker. Persistent records use the linked free Neon PostgreSQL database; datasets and checkpoints use private Vercel Blob. The full local workflow remains available as well.
 
-[Prepare the backend on Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Ftejaswini0424%2Fpricemesh-collaborative-dynamic-pricing) using the included Blueprint. This requires a Render account and approval of its paid service/disk charges. Once the service is healthy, follow [backend connection steps](DEPLOYMENT_GUIDE.md#connect-the-persistent-backend).
+API readiness: https://pricemesh-dynamic-pricing.vercel.app/api/v1/health/ready. API documentation: https://pricemesh-dynamic-pricing.vercel.app/docs. Register your own account using Login; no default password exists. Vercel Services and Daemons are beta products and Hobby quotas apply.
 
 An integrated research application for a **synthetic single-retailer** marketplace. React frontend, authenticated FastAPI service, durable database queue, independent worker and explicit PyTorch IPPO/MAPPO implementations. The approved design is in [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md); implementation differences are recorded in [PROJECT_REQUIREMENTS.md](PROJECT_REQUIREMENTS.md).
 
@@ -77,6 +77,6 @@ The backend suite covers end-to-end API/worker behavior, all three PPO variants,
 
 Copy `.env.example` to `.env`, replace both secrets, then use `docker compose up --build` when Docker is installed. The local container entrypoint is [localhost:8080](http://localhost:8080). Docker/PostgreSQL and MLflow integration are configured but have not been executed on this machine. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).
 
-Vercel can host the frontend. PyTorch training requires a separate persistent API/worker host and artifact volume; this project is not a single Vercel serverless deployment. Hosting credentials and a backend URL are required before a public full-stack deployment can be verified.
+Vercel builds from the repository root using root vercel.json, which defines the frontend/API services and training-worker daemon. Do not change its Root Directory back to frontend. No Render service is required. See DEPLOYMENT_GUIDE.md for environment settings and quotas.
 
 No real-world profit or convergence claims are made. Single-policy intervals describe episode uncertainty; use the multi-training-seed runner in [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for research. Full demand-model calibration, consumer segmentation, learned elasticity, and live commerce integrations are outside this release.

@@ -18,6 +18,6 @@ Implemented: 32 frontend routes; synthetic product catalogs; immutable scenario 
 
 ## Production release gates
 
-Configure HTTPS, unique secrets, allowed origins, a persistent artifact volume, backups, monitoring and a persistent worker host. Execute the Docker/PostgreSQL and optional MLflow checks in the target environment. Public deployment is not complete until health, authentication, cookie behavior, job execution and exports work through the deployed URL. Vercel account access and a backend host are external requirements.
+The Vercel deployment uses Services for frontend/API, a production Daemon for the worker, Neon PostgreSQL and private Blob. HTTPS, unique signing secrets, allowed origins and durable cloud storage are configured. Cloud images built, public API readiness passed, and the production worker reported ready. Live-account workflows, backup restore, sustained load and optional MLflow remain operational checks. No Render host is required. Platform beta limitations and free-plan quotas apply.
 
 Resource budgets: at most 20 products, 365 steps per episode, 250,000 product-steps per job and three queued/running jobs per account. The local worker is sequential. A paused simulation occupies its worker. This is a research application, not a high-availability enterprise service.

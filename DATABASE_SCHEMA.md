@@ -2,6 +2,8 @@
 
 Implemented with SQLAlchemy and Alembic revisions `0001` and `0002`.
 
+Production on Vercel uses the linked Neon PostgreSQL database. API and worker apply serialized migrations with transaction-scoped PostgreSQL advisory locks, compatible with Neon's transaction pooler. Cloud artifacts use private Vercel Blob paths derived from server job UUIDs; local DATA_DIR is only temporary staging. Resource ownership is checked before artifact access.
+
 | Table | Purpose and relations |
 |---|---|
 | users | Unique normalized email, PBKDF2 password hash, role, active flag, settings |

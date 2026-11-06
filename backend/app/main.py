@@ -18,6 +18,7 @@ from .database import (SessionLocal, User, LoginSession, Resource, Job, Notice, 
                        get_db, init_db, public_resource, public_job, DATA_DIR)
 from .security import current_user, hash_password, verify_password, access_token, digest, DUMMY_PASSWORD_HASH
 from .schemas import Credentials, Catalog, Scenario, Experiment, Generate, Evaluate, Simulate, Report, Settings, Compare, Drift, Diagnostics, Sensitivity, Control, Profile, UserUpdate
+from . import artifacts
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO'))
 log=logging.getLogger('pricemesh.api')
@@ -26,7 +27,10 @@ PRODUCTION=os.getenv('APP_ENV')=='production'
 
 @asynccontextmanager
 async def lifespan(app):
-    if not PRODUCTION: init_db()
+    if os.getenv('AUTO_MIGRATE')=='1':
+        from .database import migrate_db
+        await asyncio.to_thread(migrate_db)
+    elif not PRODUCTION: init_db()
     yield
 
 app=FastAPI(title='PriceMesh Research API',version='1.0.0',lifespan=lifespan)
@@ -65,10 +69,8 @@ def records_of(row):
     artifact=row.data.get('artifact_id')
     if not artifact: return []
     # Artifact IDs originate exclusively from server-generated UUID job IDs.
-    from .worker import artifact_folder
-    path=artifact_folder(artifact)/'records.json'
-    if not path.exists(): raise HTTPException(404,'Artifact is unavailable')
-    return json.loads(path.read_text(encoding='utf8'))
+    try:return json.loads(artifacts.read(artifact,'records.json'))
+    except FileNotFoundError:raise HTTPException(404,'Artifact is unavailable')
 def csv_content(rows):
     out=io.StringIO()
     if rows:
@@ -286,7 +288,9 @@ def download(identifier:str,format:str=Query('json',pattern='^(json|csv|html)$')
         content=f'<!doctype html><meta charset="utf-8"><title>PriceMesh report</title><style>body{{font:14px system-ui;max-width:1000px;margin:40px auto;padding:20px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}@media print{{button{{display:none}}}}</style><h1>{html.escape(row.name)}</h1><p>Artificial single-retailer market. Results are not evidence of real-world profitability.</p><p>Use your browser print dialog to save a PDF.</p><pre>{html.escape(json.dumps(data,indent=2))}</pre>'
         media='text/html'
     else: content=json.dumps(data,indent=2);media='application/json'
-    return Response(content,media_type=media,headers={'Content-Disposition':f'attachment; filename="pricemesh-{row.id}.{format}"'})
+    # Stream large exports instead of hitting Vercel's buffered response limit.
+    return StreamingResponse((content[i:i+65536] for i in range(0,len(content),65536)),media_type=media,
+        headers={'Content-Disposition':f'attachment; filename="pricemesh-{row.id}.{format}"'})
 
 @app.post('/api/v1/reports',status_code=201)
 def report(body:Report,user=Depends(current_user),db=Depends(get_db)):
@@ -315,7 +319,7 @@ def status(user=Depends(current_user),db=Depends(get_db)):
     db.execute(text('SELECT 1'))
     recent=db.scalar(select(func.max(Lease.heartbeat)))
     return {'api':'ready','database':'ready','worker':'online' if recent and recent>time.time()-600 else 'offline',
-            'storage':'local persistent volume','mlflow':'configured' if os.getenv('MLFLOW_TRACKING_URI') else 'disabled','environment':os.getenv('APP_ENV','development')}
+            'storage':'private Vercel Blob' if artifacts.cloud_storage() else 'local persistent volume','mlflow':'configured' if os.getenv('MLFLOW_TRACKING_URI') else 'disabled','environment':os.getenv('APP_ENV','development')}
 
 @app.post('/api/v1/analysis/sensitivity',status_code=202)
 def sensitivity(body:Sensitivity,user=Depends(current_user),db=Depends(get_db)):
@@ -361,9 +365,8 @@ def diagnostics(body:Diagnostics,user=Depends(current_user),db=Depends(get_db)):
     import torch
     from pricing.learning import load_policy
     from pricing.environment import Market,ACTIONS
-    from .worker import artifact_folder
     source=resource(db,body.policy_id,user.id,'policy')
-    policy,_=load_policy(artifact_folder(source.data['artifact_id']))
+    policy,_=load_policy(artifacts.policy_folder(source.data['artifact_id']))
     obs=Market(source.data['scenario']).observe()
     rows=[]
     for feature,index in [('initial',None),('inventory_low',0),('inventory_high',0),('last_sales_low',3),('last_sales_high',3)]:

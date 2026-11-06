@@ -1,40 +1,67 @@
 # Deployment
 
-## Local Docker Compose
+## Current Vercel deployment
 
-Copy `.env.example` to `.env`, replace both secrets and keep APP_ENV=development for local HTTP. Use a URL-safe PostgreSQL password or correctly URL-encode it in DATABASE_URL. Run `docker compose up --build`; open http://localhost:8080. Database and artifact named volumes persist. Migrations run before API and worker startup. API readiness is checked before the frontend starts.
+Application: https://pricemesh-dynamic-pricing.vercel.app/dashboard
+API readiness: https://pricemesh-dynamic-pricing.vercel.app/api/v1/health/ready
+API documentation: https://pricemesh-dynamic-pricing.vercel.app/docs
 
-Docker is not installed in the current execution environment, so image builds, PostgreSQL runtime and container restart persistence remain **unverified**. The SQLite migration and persistence workflow have been tested locally. Do not describe the container stack as production verified until these commands succeed on the target host.
+Root `vercel.json` defines:
 
-Optional tracking profile: set `MLFLOW_TRACKING_URI=http://mlflow:5000` in `.env` and start with `docker compose --profile tracking up --build`. The MLflow endpoint is private to the Compose network and stores artifacts in its tracking volume. Test compatibility with the resolved MLflow version before relying on this mirror; no MLflow service was run here.
+- `frontend`: Vite service rooted at frontend/.
+- `backend`: Python CPU container from Dockerfile.vercel, routed under /api and /docs.
+- `training-worker`: one 1 GiB Vercel Daemon in iad1, built from Dockerfile.worker.
 
-## Public production
+Services and Daemons are beta products. Both service images and worker built on Vercel; no local Docker daemon was needed for the cloud builds. The production API returned ready, and Vercel reported one ready worker on 6 November 2026.
 
-Set APP_ENV=production, a long random JWT_SECRET, explicit HTTPS CORS_ORIGINS and persistent DATABASE_URL/DATA_DIR. Put a TLS reverse proxy/load balancer in front of Nginx. Cookies are Secure in production; HTTP login will not retain refresh sessions. Publish only the frontend/proxy. Keep PostgreSQL and tracking services private. Configure trusted proxy addresses for your own ingress rather than trusting arbitrary forwarding headers.
+The linked Vercel project's Root Directory is the repository root (not frontend). Framework, build and output settings belong to the frontend service. GitHub pushes build and release the whole application together. Do not change the root back to frontend or run scripts/connect-backend.mjs for this multi-service deployment; that script belongs to the optional external-backend setup.
 
-API and worker must share the same artifact volume and database. Back up both consistently, test restore, apply migrations once per release and monitor worker heartbeats, queued jobs, failed jobs, disk capacity and API readiness. Use an external load balancer for ingress limits and managed secret injection. The application enforces login throttling and per-account job budgets; it is not a replacement for infrastructure abuse protection.
+## Persistent data and environment
 
-## Vercel frontend
+Neon resource `pricemesh-database` was provisioned on its free plan in iad1. Vercel private Blob store `pricemesh-artifacts` holds datasets/checkpoints. Neither API nor worker treats temporary local files as durable storage. Session signing secrets are generated privately and are never committed.
 
-### Connect the persistent backend
+Production environment settings:
 
-The repository includes a ready-to-review Render Blueprint: [deploy backend](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Ftejaswini0424%2Fpricemesh-collaborative-dynamic-pricing).
+| Variable | Purpose |
+|---|---|
+| DATABASE_URL | Provisioned Neon connection; normalized to SQLAlchemy psycopg |
+| BLOB_READ_WRITE_TOKEN | Provisioned private Blob access; never expose to clients |
+| JWT_SECRET | Secret session-signing key, at least 32 characters |
+| APP_ENV=production | Secure session cookies |
+| ARTIFACT_STORAGE=vercel-blob | Durable cloud artifact adapter |
+| AUTO_MIGRATE=1 | Serialized API/worker migrations at startup |
+| PORT=8000 | Backend container listener |
+| CORS_ORIGINS | Exact public frontend HTTPS origin |
+| WORKER_POLL_SECONDS=5 | Durable queue polling interval |
 
-1. Sign in to Render and review `render.yaml`. It proposes one **paid Standard** Python web service and a **1 GB persistent disk**. Review Render's charges before approving creation; no backend service has been purchased or created by this configuration alone.
-2. Render generates JWT_SECRET. The disk stores SQLite and artifacts under `/var/data`. The hosted launcher runs migrations at startup and supervises API and worker in the same instance, because Render cannot share one disk between separate services. This is a single-instance research deployment, not high availability; back up the database and artifacts.
-3. Wait for the Render service to become healthy. Copy its actual HTTPS origin, such as the URL shown in Render's dashboard. Do not assume that a service name implies a particular available hostname.
-4. From the repository root, run `node scripts/connect-backend.mjs https://YOUR-ACTUAL-BACKEND-HOST`. The script checks PriceMesh readiness before updating frontend/vercel.json with same-origin API and documentation rewrites. An invalid/unreachable backend leaves the frontend configuration unchanged.
-5. Commit and push the generated vercel.json change. Vercel automatically redeploys. Keep VITE_API_BASE_URL unset, so the browser calls `/api/v1` on the frontend domain. CORS_ORIGINS must include the exact production frontend origin; the Blueprint includes the current Vercel domain.
-6. Verify `/api/v1/health/ready` through the Vercel domain, then register, reload, train and export through the public UI. Check worker status in System health. Only after these pass is the online backend connection complete.
+The application uses relative `/api/v1` URLs, so browser sessions remain same-origin. No VITE_API_BASE_URL is needed. PostgreSQL migration locks are transaction-scoped for compatibility with the Neon pooler. Private artifact downloads are authorized through the API; exports stream to avoid a buffered function-response size ceiling.
 
-The hosted launcher was exercised locally with production-mode configuration, a fresh migrated database and a real API-to-worker dataset job. Render itself still requires your account and service creation. See [Render disk limitations](https://render.com/docs/disks) and [Blueprint reference](https://render.com/docs/blueprint-spec).
+Never commit `.env.local`, pulled Vercel settings, credentials, or data. The integration values belong to the linked project; do not copy production database URLs into automated tests. Preview databases and test fixtures must remain separate from production accounts.
 
-Live frontend: https://pricemesh-dynamic-pricing.vercel.app. The Vercel project `pricemesh-dynamic-pricing` is connected to the GitHub repository with its Root Directory set to `frontend`. GitHub pushes build that directory using `npm run build` and publish `dist`. The supplied vercel.json rewrites frontend routes to index.html. This **does not host the Python worker**. Deploy the persistent API/worker to a suitable container/VM host to enable online account and research operations.
+## Deploy and inspect
 
-Preferred routing is a same-origin Vercel rewrite from `/api/:path*` to the actual deployed backend `/api/:path*`; add that exact destination only after a real backend URL exists. Route Swagger/OpenAPI too if desired. Leave VITE_API_BASE_URL=/api/v1. Alternatively use same-site HTTPS subdomains and set VITE_API_BASE_URL to the API URL before building. Unrelated domains will conflict with Strict refresh cookies and are unsupported without a proxy.
+From the repository root after verifying the intended project:
 
-Vercel authorization and frontend production deployment completed on 5 November 2026. The production root, dashboard and training deep link returned HTTP 200. No public backend URL is configured, so public authentication → job → export remains unverified and unavailable. Frontend publication alone is not a full-stack deployment.
+```powershell
+npx vercel project inspect --non-interactive
+npx vercel deploy --prod --skip-domain
+npx vercel curl https://YOUR-STAGED-URL/api/v1/health/ready
+npx vercel promote https://YOUR-STAGED-URL
+npx vercel daemons inspect training-worker
+```
 
-## Release verification
+Staged production deployments use production settings but do not replace the public domain until promoted. Daemons start when the deployment becomes the production deployment, and only run in production during beta. Do not switch public domains until service builds and API readiness pass. Test accounts belong in isolated databases, not the live production database.
 
-Run component/backend/browser suites and production frontend build. Then verify production health, registration, login after reload, catalog persistence after API restart, worker execution, cancellation, result ownership, simulation SSE/reconnect, report download, deep links, mobile navigation and backup restore. Check the configured MLflow endpoint with a real run if tracking is enabled.
+## Quotas, operations and limits
+
+The account was not upgraded to a paid plan. Hobby quotas apply to backend invocations, private storage and daemon compute. A continuously running 1 GiB worker consumes Provisioned Memory quota even while idle. Current limits are documented at https://vercel.com/docs/daemons/limits. When quotas run out, workers may stop until the next period; do not promise unlimited training or continuous availability.
+
+Vercel starts/restarts the worker; the application database stores job progress. Interrupted jobs become failed after their heartbeat expires, rather than being falsely reported complete. Check worker status in System health and daemon logs. Back up the database and artifacts consistently and verify restore. Monitor job failures, database/storage limits and compute use. Scaling workers requires deliberate concurrency/resource review.
+
+MLflow remains optional and unconfigured in this deployment. Training convergence and real-world profitability are not deployment acceptance claims.
+
+## Local Docker Compose and alternative Render host
+
+Local Docker Compose configuration remains available: copy .env.example to .env, replace secrets and run `docker compose up --build`. Local Compose startup/PostgreSQL/MLflow has not been executed on this machine. Vercel image startup does not establish Compose correctness.
+
+The repository also retains render.yaml and backend.app.serve as an optional paid, disk-backed alternative. It is not used or required by the current Vercel deployment. Review the provider's charges before creating it. Migrating to that alternative requires intentionally replacing the Vercel service routing, rather than simply adding a second backend URL.

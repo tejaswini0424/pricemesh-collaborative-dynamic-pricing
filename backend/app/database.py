@@ -2,13 +2,15 @@ import os
 import time
 import uuid
 from pathlib import Path
-from sqlalchemy import create_engine, String, Float, Integer, Boolean, JSON, ForeignKey, event
+from sqlalchemy import create_engine, String, Float, Integer, Boolean, JSON, ForeignKey, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-DATA_DIR=Path(os.getenv('DATA_DIR','artifacts')).resolve()
+DATA_DIR=Path(os.getenv('DATA_DIR','/tmp/pricemesh' if os.getenv('VERCEL') else 'artifacts')).resolve()
 DATA_DIR.mkdir(parents=True,exist_ok=True)
 DATABASE_URL=os.getenv('DATABASE_URL',f'sqlite:///{(DATA_DIR/"pricemesh.db").as_posix()}')
-engine=create_engine(DATABASE_URL,connect_args={'check_same_thread':False,'timeout':30} if DATABASE_URL.startswith('sqlite') else {},pool_pre_ping=True)
+if DATABASE_URL.startswith(('postgres://','postgresql://')):
+    DATABASE_URL='postgresql+psycopg://'+DATABASE_URL.split('://',1)[1]
+engine=create_engine(DATABASE_URL,connect_args={'check_same_thread':False,'timeout':30} if DATABASE_URL.startswith('sqlite') else {'connect_timeout':15,'prepare_threshold':None},pool_pre_ping=True,**({} if DATABASE_URL.startswith('sqlite') else {'pool_size':2,'max_overflow':1,'pool_recycle':300}))
 if DATABASE_URL.startswith('sqlite'):
     @event.listens_for(engine,'connect')
     def sqlite_options(connection,_):
@@ -81,6 +83,18 @@ class Lease(Base):
 
 def init_db():
     Base.metadata.create_all(engine)
+
+def migrate_db():
+    """Serialize cloud migrations across independently started API/worker instances."""
+    from alembic import command
+    from alembic.config import Config
+    config=Config(str(Path(__file__).resolve().parents[1]/'alembic.ini'))
+    with engine.begin() as connection:
+        if connection.dialect.name=='postgresql':
+            # Transaction locks work with Neon's transaction-pooling endpoint.
+            connection.execute(text('SELECT pg_advisory_xact_lock(60489124)'))
+        config.attributes['connection']=connection
+        command.upgrade(config,'head')
 
 def get_db():
     with SessionLocal() as db: yield db

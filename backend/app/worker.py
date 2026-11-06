@@ -9,15 +9,13 @@ import uuid
 from pathlib import Path
 from sqlalchemy import select, update
 from .database import DATA_DIR, SessionLocal, Job, Resource, Notice, Lease, init_db
+from . import artifacts
 
 log=logging.getLogger('pricemesh.worker')
 class Cancelled(Exception): pass
 
 def artifact_folder(identifier):
-    identifier=str(uuid.UUID(identifier))
-    folder=DATA_DIR/identifier
-    folder.mkdir(exist_ok=True)
-    return folder
+    return artifacts.folder(identifier)
 
 def save_json(path,data):
     temporary=path.with_suffix('.tmp')
@@ -69,7 +67,7 @@ def process(job_id,worker_id='local-worker'):
     elif config['type'] in ('evaluation','simulation','sensitivity'):
         policy=None
         if config.get('policy_artifact'):
-            policy,_=load_policy(artifact_folder(config['policy_artifact']))
+            policy,_=load_policy(artifacts.policy_folder(config['policy_artifact']))
         if config['type'] in ('evaluation','sensitivity'):
             kind='evaluation';result=evaluate(scenario,settings,policy,progress)
             result.update(scenario=scenario,policy_id=settings.get('policy_id'))
@@ -101,6 +99,7 @@ def process(job_id,worker_id='local-worker'):
     else: raise ValueError('Unsupported job type')
     from .tracking import mirror
     result['tracking']=mirror(job_id,kind,settings,result,folder)
+    artifacts.publish(job_id)
     with SessionLocal() as db:
         job=db.get(Job,job_id)
         if job.cancel_requested: raise Cancelled()
@@ -139,13 +138,17 @@ def run_once(worker_id='local-worker'):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    init_db();worker_id=f'worker-{os.getpid()}'
+    if os.getenv('AUTO_MIGRATE')=='1':
+        from .database import migrate_db
+        migrate_db()
+    else:init_db()
+    worker_id=f'worker-{os.getpid()}'
     stop=False
     def shutdown(*_):
         nonlocal stop
         stop=True
     signal.signal(signal.SIGINT,shutdown);signal.signal(signal.SIGTERM,shutdown)
     while not stop:
-        if not run_once(worker_id): time.sleep(1)
+        if not run_once(worker_id): time.sleep(float(os.getenv('WORKER_POLL_SECONDS','1')))
 
 if __name__=='__main__': main()
